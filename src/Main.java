@@ -1,5 +1,6 @@
 import java.io.*;
 import java.net.URI;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
@@ -36,8 +37,8 @@ public class Main {
         while (enums.hasMoreElements()) {
             JarEntry entry = enums.nextElement();
 
-            String fileName = destinationDir + File.separator + entry.getName();
-            File f = new File(fileName.substring(0, fileName.lastIndexOf("/")));
+            String fileName = destinationDir + File.separator + entry.getName().replace("/", File.separator);
+            File f = new File(fileName.substring(0, fileName.lastIndexOf(File.separator)));
             f.mkdirs();
         }
 
@@ -86,7 +87,7 @@ public class Main {
         }
         if (!source.getName().endsWith(".fxml")) return;
         File dest = new File(source.getPath() + "1");
-        try (BufferedReader r = Files.newBufferedReader(source.toPath(), StandardCharsets.UTF_8);
+        try (BufferedReader r = Files.newBufferedReader(source.toPath(), Charset.defaultCharset());
              BufferedWriter w = Files.newBufferedWriter(dest.toPath(), StandardCharsets.UTF_8)) {
             Pattern pattern = Pattern.compile("onAction=\"(#[^\\s]+)\"");
             r.lines().forEach(line -> {
@@ -97,6 +98,7 @@ public class Main {
                     String obfuscatedCall = onActionCall.replace(method, mapping.get(method));
                     line = line.replace(onActionCall, obfuscatedCall);
                 }
+                line = line.replace("Journal", mapping.get("Journal")).replace("Quality", mapping.get("Quality"));
                 try {
                     w.write(line);
                     w.newLine();
