@@ -21,8 +21,8 @@ public class Main {
         String outJar = args[1];
         String mappingFile = args[2];
         String unJarDir = args[3];
-        unzipJar(unJarDir, inJar);
         mapping = getMapping(new File(mappingFile));
+        unzipJar(unJarDir, inJar);
         File root = new File(unJarDir);
         refxml(root);
         jar(root, new File(outJar));
@@ -74,6 +74,12 @@ public class Main {
                 if (matcher.find()) {
                     mapping.put(matcher.group(1), matcher.group(2));
                 }
+                if (line.contains("view.Journal ->"))
+                    mapping.put("Journal", line.substring(line.length()-2, line.length()-1));
+                if (line.contains("view.Quality ->"))
+                    mapping.put("Quality", line.substring(line.length()-2, line.length()-1));
+                if (line.contains("controller.ClientController ->"))
+                    mapping.put("ClientController", line.substring(line.length()-2, line.length()-1));
             });
         }
         return mapping;
@@ -87,7 +93,7 @@ public class Main {
         }
         if (!source.getName().endsWith(".fxml")) return;
         File dest = new File(source.getPath() + "1");
-        try (BufferedReader r = Files.newBufferedReader(source.toPath(), Charset.defaultCharset());
+        try (BufferedReader r = Files.newBufferedReader(source.toPath(), StandardCharsets.UTF_8);
              BufferedWriter w = Files.newBufferedWriter(dest.toPath(), StandardCharsets.UTF_8)) {
             Pattern pattern = Pattern.compile("onAction=\"(#[^\\s]+)\"");
             r.lines().forEach(line -> {
@@ -98,7 +104,6 @@ public class Main {
                     String obfuscatedCall = onActionCall.replace(method, mapping.get(method));
                     line = line.replace(onActionCall, obfuscatedCall);
                 }
-                line = line.replace("Journal", mapping.get("Journal")).replace("Quality", mapping.get("Quality"));
                 try {
                     w.write(line);
                     w.newLine();
