@@ -1,6 +1,5 @@
 import java.io.*;
 import java.net.URI;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.*;
@@ -67,20 +66,31 @@ public class Main {
 
     private static Map<String, String> getMapping(File proguardMapping) throws IOException {
         Map<String, String> mapping = new HashMap<>();
-        Pattern pattern = Pattern.compile("void ([^\\s$<]+)\\(\\) -> ([^\\s]+)");
         try (BufferedReader r = Files.newBufferedReader(proguardMapping.toPath(), StandardCharsets.UTF_8)) {
-            r.lines().forEach(line -> {
-                Matcher matcher = pattern.matcher(line);
-                if (matcher.find()) {
-                    mapping.put(matcher.group(1), matcher.group(2));
+            String lastClass = "";
+            String line;
+            while ((line = r.readLine()) != null) {
+                int arrow = line.indexOf("->");
+                int space = line.substring(0, arrow-1).lastIndexOf(' ');
+                String original = line.substring(space+1, arrow-1); // if there's no space then index is -1 and it's just beginning of the string
+                String obfuscated = line.substring(arrow+3);
+                int weirdNumbers = original.lastIndexOf(':');
+                if (weirdNumbers != -1) { // some methods get numbers after their name. I don't know what they mean
+                    original = original.substring(0, weirdNumbers);
                 }
-                if (line.contains("view.Journal ->"))
-                    mapping.put("Journal", line.substring(line.length()-2, line.length()-1));
-                if (line.contains("view.Quality ->"))
-                    mapping.put("Quality", line.substring(line.length()-2, line.length()-1));
-                if (line.contains("controller.ClientController ->"))
-                    mapping.put("ClientController", line.substring(line.length()-2, line.length()-1));
-            });
+                if (obfuscated.endsWith(":")) { // class declaration
+                    obfuscated = obfuscated.substring(0, obfuscated.length()-1);
+                    lastClass = obfuscated + ".";
+                }
+                int openingBracket = original.indexOf('(');
+                if (openingBracket != -1) { // we need only names of methods, not their signature
+                    original = original.substring(0, openingBracket);
+                }
+                if (lastClass.startsWith(original))
+                    mapping.put(original, obfuscated);
+                else
+                    mapping.put(lastClass + original, obfuscated);
+            }
         }
         return mapping;
     }
@@ -95,14 +105,57 @@ public class Main {
         File dest = new File(source.getPath() + "1");
         try (BufferedReader r = Files.newBufferedReader(source.toPath(), StandardCharsets.UTF_8);
              BufferedWriter w = Files.newBufferedWriter(dest.toPath(), StandardCharsets.UTF_8)) {
-            Pattern pattern = Pattern.compile("onAction=\"(#[^\\s]+)\"");
-            r.lines().forEach(line -> {
+            Pattern pattern = Pattern.compile("(fx:id|onAction|fx:controller|source)=\"([^\\s]+)\"");
+
+            String controller = "";
+            String line;
+            List<String> currentKeys = new ArrayList<>();
+            while ((line = r.readLine()) != null) {
                 Matcher matcher = pattern.matcher(line);
-                if (matcher.find()) {
-                    String onActionCall = matcher.group(1);
-                    String method = onActionCall.substring(1);
-                    String obfuscatedCall = onActionCall.replace(method, mapping.get(method));
-                    line = line.replace(onActionCall, obfuscatedCall);
+                while (matcher.find()) {
+                    String call = matcher.group(0);
+                    String method = matcher.group(2).replace("#", "");
+                    if (call.contains("controller")) {
+                        controller = method + ".";
+                        for (String key : currentKeys) {
+                            String value = mapping.get(controller + key);
+                            if (value == null) {
+                                System.out.println(method + " is not found in mapping. File: " + source.getPath());
+                            } else {
+                                line = line.replace(key, value);
+                            }
+                        }
+                        currentKeys.clear();
+                        continue;
+                    }
+                    boolean isInclude = line.contains("include");
+                    String qualifiedMethod = controller + method;
+                    if (!isInclude && mapping.containsKey(qualifiedMethod)) {
+                        String obfuscatedCall = call.replace(method, mapping.get(qualifiedMethod));
+                        line = line.replace(call, obfuscatedCall);
+//                    } else if (isInclude && mapping.containsKey(qualifiedMethod + "Controller")) { // injection mechanism for fx:include kills me
+//                        String obfuscatedCall = call.replace(method, mapping.get(qualifiedMethod + "Controller"));
+//                        line = line.replace(call, obfuscatedCall);
+                    } else if (isInclude && call.contains("source")) {
+                        // unobfuscated classname
+                        method = method.replace(".fxml", "");
+                        // obfuscated package path
+                        String packagePath = source.getPath()
+                                .replace(File.separator, ".")
+                                .replace("dest.", "")
+                                .replace(source.getName(), "");
+                        // horribly inefficient, but I don't have time for much else and it doesn't matter anyway
+                        // maybe I'll change it later, but I probably won't
+                        for (String key : mapping.keySet()) {
+                            String value = mapping.get(key);
+                            if (value.startsWith(packagePath) && key.endsWith(method)) {
+                                String obfuscatedName = value.replace(packagePath, "");
+                                line = line.replace(method, obfuscatedName);
+                            }
+                        }
+                    } else {
+                        currentKeys.add(method);
+                    }
                 }
                 try {
                     w.write(line);
@@ -110,7 +163,7 @@ public class Main {
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-            });
+            }
         }
         source.delete();
         dest.renameTo(source);
