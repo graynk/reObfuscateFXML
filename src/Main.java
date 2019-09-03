@@ -105,7 +105,7 @@ public class Main {
         File dest = new File(source.getPath() + "1");
         try (BufferedReader r = Files.newBufferedReader(source.toPath(), StandardCharsets.UTF_8);
              BufferedWriter w = Files.newBufferedWriter(dest.toPath(), StandardCharsets.UTF_8)) {
-            Pattern pattern = Pattern.compile("(fx:id|onAction|fx:controller|source)=\"([^\\s]+)\"");
+            Pattern pattern = Pattern.compile("(fx:id|onAction|fx:controller|source|toggleGroup)=\"([^\\s]+)\"");
 
             String controller = "";
             String line;
@@ -114,7 +114,7 @@ public class Main {
                 Matcher matcher = pattern.matcher(line);
                 while (matcher.find()) {
                     String call = matcher.group(0);
-                    String method = matcher.group(2).replace("#", "");
+                    String method = matcher.group(2).replace("#", "").replace("$", "");
                     if (call.contains("controller")) {
                         controller = method + ".";
                         for (String key : currentKeys) {
